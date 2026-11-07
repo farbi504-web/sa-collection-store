@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum OrderStatus {
+  NEW
+  CONFIRMED
+  PREPARING
+  READY
+  SENT
+  DELIVERED
+  CANCELLED
+  RETURNED
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// CMS document with a published copy and an optional unpublished draft
+model SiteContent {
+  key         String   @id
+  published   Json
+  draft       Json?
+  updatedAt   DateTime @updatedAt
+}
+
+// Snapshot of previously published content, used for rollback
+model ContentVersion {
+  id        String   @id @default(cuid())
+  key       String
+  data      Json
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([key, createdAt])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  slug      String    @unique
+  name      String
+  image     String    @default("")
+  sortOrder Int       @default(0)
+  visible   Boolean   @default(true)
+  products  Product[]
+}
+
+model Product {
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  name         String
+  shortDesc    String        @default("")
+  description  String        @default("")
+  price        Int
+  comparePrice Int?
+  images       String[]
+  status       ProductStatus @default(DRAFT)
+  featured     Boolean       @default(false)
+  isNew        Boolean       @default(false)
+  bestSeller   Boolean       @default(false)
+  sortOrder    Int           @default(0)
+  seoTitle     String        @default("")
+  seoDesc      String        @default("")
+  categoryId   String?
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  variants     Variant[]
+  items        OrderItem[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([status, sortOrder])
+  @@index([categoryId])
+}
+
+// One row per size/color combination, each with its own stock
+model Variant {
+  id        String          @id @default(cuid())
+  productId String
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  size      String          @default("")
+  color     String          @default("")
+  sku       String          @default("")
+  stock     Int             @default(0)
+  movements StockMovement[]
+  items     OrderItem[]
+
+  @@unique([productId, size, color])
+}
+
+model StockMovement {
+  id        String   @id @default(cuid())
+  variantId String
+  variant   Variant  @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  before    Int
+  after     Int
+  reason    String
+  actor     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([variantId, createdAt])
+  @@index([createdAt])
+}
+
+model Order {
+  id            String       @id @default(cuid())
+  number        Int          @unique @default(autoincrement())
+  ref           String       @unique
+  idemKey       String?      @unique
+  status        OrderStatus  @default(NEW)
+  stockHeld     Boolean      @default(true)
+  customerName  String
+  phone         String
+  phone2        String       @default("")
+  wilaya        Int
+  commune       String
+  address       String
+  notes         String       @default("")
+  internalNotes String       @default("")
+  subtotal      Int
+  deliveryFee   Int
+  total         Int
+  trackingCode  String       @default("")
+  items         OrderItem[]
+  events        OrderEvent[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([status, createdAt])
+  @@index([phone])
+  @@index([createdAt])
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  variantId String?
+  variant   Variant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  name      String
+  size      String   @default("")
+  color     String   @default("")
+  qty       Int
+  price     Int
+}
+
+model OrderEvent {
+  id        String       @id @default(cuid())
+  orderId   String
+  order     Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  from      OrderStatus?
+  to        OrderStatus
+  note      String       @default("")
+  actor     String       @default("")
+  createdAt DateTime     @default(now())
+
+  @@index([orderId, createdAt])
+}
+
+model Review {
+  id        String       @id @default(cuid())
+  name      String
+  text      String
+  stars     Int          @default(5)
+  photo     String       @default("")
+  verified  Boolean      @default(false)
+  status    ReviewStatus @default(PENDING)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+}
+
+// Delivery fee per wilaya (1..58). fee = null means delivery is not available yet
+model WilayaFee {
+  code Int    @id
+  name String
+  fee  Int?
+}
+
+model Page {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  content   String   @default("")
+  published Boolean  @default(false)
+  seoDesc   String   @default("")
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String
+  entity    String
+  entityId  String?
+  detail    String   @default("")
+  actor     String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
